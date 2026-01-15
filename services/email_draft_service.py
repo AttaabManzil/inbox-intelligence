@@ -1,52 +1,69 @@
-import json
+import os
 from openai import OpenAI
 
-client = OpenAI()
+client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+
 
 class EmailDraftService:
-    def generate_draft(self, thread: list[dict], user_context: str | None = None) -> dict:
+    """
+    Generates a professional, ready-to-send email reply based on a Gmail thread.
+    """
 
-        messages_text = "\n\n".join(
-            f"From: {m['from']}\nMessage:\n{m['content']}"
-            for m in thread
+    def generate_draft(self, thread: list[dict], user_context: str | None = None):
+        """
+        thread: [
+            { "from": "...", "body": "..." },
+            ...
+        ]
+        """
+
+        conversation = []
+
+        for msg in thread:
+            sender = msg.get("from", "User")
+            body = msg.get("body") or msg.get("content") or ""
+
+            if body.strip():
+                conversation.append(f"{sender}:\n{body}")
+
+        conversation_text = "\n\n".join(conversation)
+
+        # ✅ SYSTEM PROMPT (behavior)
+        system_prompt = (
+            "You are a professional email assistant. "
+            "Write clear, polite, and well-structured email replies suitable for sending via Gmail."
         )
 
-        system_prompt = """
-You are drafting a reply to an existing email thread.
+        # ✅ USER PROMPT (task)
+        user_prompt = f"""
+Email conversation:
+------------------
+{conversation_text}
 
-Rules:
-- Use ONLY the email thread for factual information.
-- User preferences may guide tone or structure ONLY.
-- Do NOT invent facts, dates, prices, or commitments.
-- Draft a professional business email.
-- Return JSON only.
+Instructions:
+-------------
+{user_context or "Write a professional and polite reply."}
 
-Return this schema:
-{
-  "to": string,
-  "subject": string,
-  "body": string,
-  "tone": "professional"
-}
+Write a complete email reply including:
+- A polite greeting
+- Clear, concise paragraphs
+- A professional closing and sign-off
+
+Do NOT include a subject line.
+Output ONLY the email content.
 """
 
-        user_prompt = messages_text
-
-        if user_context:
-            user_prompt = (
-                "User preferences (NOT facts):\n"
-                f"{user_context}\n\n"
-                "Email thread:\n"
-                f"{messages_text}"
-            )
-
         response = client.chat.completions.create(
-            model="gpt-4.1-mini",
+            model="gpt-4o-mini",
             messages=[
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_prompt},
             ],
-            response_format={"type": "json_object"},
+            temperature=0.4,
         )
 
-        return json.loads(response.choices[0].message.content)
+        body = response.choices[0].message.content.strip()
+
+        return {
+            "body": body
+        }

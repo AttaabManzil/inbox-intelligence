@@ -1,186 +1,89 @@
-import { useEffect, useState } from "react";
-
-/**
- * UI states that mirror backend reality
- */
-type UiState =
-  | "WAITING_FOR_AI"
-  | "DRAFT_READY"
-  | "APPROVING"
-  | "DONE"
-  | "ERROR";
+import { useState, useEffect } from "react";
 
 interface GmailDraftWorkflowProps {
-  workflowId: string;
+  initialDraft: string;
+  onSaveDraft: (draft: string) => Promise<void>;
+  onSendEmail: () => Promise<void>; // 🔥 no draft argument needed
+  saving?: boolean;
 }
 
 export default function GmailDraftWorkflow({
-  workflowId,
+  initialDraft,
+  onSaveDraft,
+  onSendEmail,
+  saving = false,
 }: GmailDraftWorkflowProps) {
-  const [workflow, setWorkflow] = useState<any>(null);
-  const [uiState, setUiState] = useState<UiState>("WAITING_FOR_AI");
+  const [draft, setDraft] = useState(initialDraft);
+  const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // --------------------------------------------------
-  // Poll workflow until draft is ready
-  // --------------------------------------------------
+  // 🔁 keep textarea in sync if backend updates draft
   useEffect(() => {
-    if (!workflowId) return;
+    setDraft(initialDraft);
+  }, [initialDraft]);
 
-    const interval = setInterval(async () => {
-      try {
-        const res = await fetch(
-          `http://localhost:8000/workflows/${workflowId}`
-        );
-
-        if (!res.ok) {
-          throw new Error("Failed to fetch workflow");
-        }
-
-        const data = await res.json();
-        setWorkflow(data);
-
-        const draftReady =
-          data.state === "WAITING_FOR_APPROVAL" &&
-          data.ai_output?.type === "gmail_draft" &&
-          data.ai_output?.draft?.body;
-
-        if (draftReady) {
-          setUiState("DRAFT_READY");
-          clearInterval(interval);
-        }
-      } catch (e: any) {
-        setError(e.message || "Unknown error");
-        setUiState("ERROR");
-        clearInterval(interval);
-      }
-    }, 2000);
-
-    return () => clearInterval(interval);
-  }, [workflowId]);
-
-  // --------------------------------------------------
-  // Approve draft → create Gmail draft
-  // --------------------------------------------------
-  async function approveDraft() {
+  async function handleSave() {
     try {
-      setUiState("APPROVING");
-
-      const res = await fetch(
-        `http://localhost:8000/workflows/${workflowId}/approve`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            decision: "approved",
-            reviewer: "user",
-          }),
-        }
-      );
-
-      if (!res.ok) {
-        throw new Error("Approval failed");
-      }
-
-      setUiState("DONE");
-    } catch (e: any) {
-      setError(e.message || "Approval error");
-      setUiState("ERROR");
+      setLoading(true);
+      setError(null);
+      await onSaveDraft(draft);
+      alert("Draft saved to Gmail");
+    } catch {
+      setError("Failed to save draft");
+    } finally {
+      setLoading(false);
     }
   }
 
-  // --------------------------------------------------
-  // Reject draft
-  // --------------------------------------------------
-  async function rejectDraft() {
+  async function handleSend() {
     try {
-      setUiState("APPROVING");
-
-      await fetch(
-        `http://localhost:8000/workflows/${workflowId}/approve`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            decision: "rejected",
-            reviewer: "user",
-            notes: "Rejected by user",
-          }),
-        }
-      );
-
-      setUiState("DONE");
-    } catch (e: any) {
-      setError(e.message || "Rejection error");
-      setUiState("ERROR");
+      setLoading(true);
+      setError(null);
+      await onSendEmail(); // ✅ backend already has draft
+      alert("Email sent successfully");
+    } catch {
+      setError("Failed to send email");
+    } finally {
+      setLoading(false);
     }
   }
 
-  // --------------------------------------------------
-  // UI Rendering
-  // --------------------------------------------------
+  const disabled = loading || saving;
 
-  if (uiState === "WAITING_FOR_AI") {
-    return (
-      <div>
-        <p>⏳ Generating draft…</p>
-        <p>This usually takes a few seconds.</p>
-      </div>
-    );
-  }
+  return (
+    <div className="space-y-4">
+      <h2 className="text-lg font-semibold">Edit Draft</h2>
 
-  if (uiState === "DRAFT_READY") {
-    const draft = workflow.ai_output.draft;
-
-    return (
-      <div>
-        <h3>📧 Draft Preview</h3>
-
-        <p>
-          <strong>To:</strong> {draft.to}
-        </p>
-
-        <p>
-          <strong>Subject:</strong> {draft.subject}
-        </p>
-
-        <pre
-          style={{
-            whiteSpace: "pre-wrap",
-            background: "#f6f6f6",
-            padding: "12px",
-            borderRadius: "6px",
-          }}
-        >
-          {draft.body}
-        </pre>
-
-        <div style={{ marginTop: "12px" }}>
-          <button onClick={approveDraft}>Approve Draft</button>
-          <button onClick={rejectDraft} style={{ marginLeft: "8px" }}>
-            Reject
-          </button>
+      {error && (
+        <div className="rounded border border-red-200 bg-red-50 p-2 text-sm text-red-600">
+          {error}
         </div>
+      )}
+
+      <textarea
+        value={draft}
+        onChange={(e) => setDraft(e.target.value)}
+        rows={14}
+        className="w-full rounded border p-3 text-sm"
+      />
+
+      <div className="flex gap-3">
+        <button
+          onClick={handleSave}
+          disabled={disabled}
+          className="rounded bg-gray-800 px-4 py-2 text-white disabled:opacity-50"
+        >
+          Save to Drafts
+        </button>
+
+        <button
+          onClick={handleSend}
+          disabled={disabled}
+          className="rounded bg-black px-4 py-2 text-white disabled:opacity-50"
+        >
+          Send Email
+        </button>
       </div>
-    );
-  }
-
-  if (uiState === "APPROVING") {
-    return <p>📬 Creating Gmail draft…</p>;
-  }
-
-  if (uiState === "DONE") {
-    return <p>✅ Draft created in Gmail → Drafts</p>;
-  }
-
-  if (uiState === "ERROR") {
-    return (
-      <div>
-        <p>❌ Something went wrong</p>
-        <p>{error}</p>
-      </div>
-    );
-  }
-
-  return null;
+    </div>
+  );
 }

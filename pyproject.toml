@@ -1,0 +1,2 @@
+[tool.setuptools]
+packages = ["services", "infra", "api"]

@@ -1,14 +1,18 @@
 import { Routes, Route } from "react-router-dom";
-import WorkflowList from "./WorkflowList";
-import WorkflowDetails from "./WorkflowDetails";
-import GmailDraftPage from "./GmailDraftPage"; 
+
+import GmailDraftPage from "./pages/GmailDraftPage.tsx";
+import GmailContextPage from "./pages/GmailContextPage.tsx";
+import GmailDraftReviewPage from "./pages/GmailDraftReviewPage.tsx";
 
 export default function App() {
   return (
     <Routes>
-      <Route path="/" element={<WorkflowList />} />
-      <Route path="/workflows/:id" element={<WorkflowDetails />} />
       <Route path="/gmail/draft" element={<GmailDraftPage />} />
+      <Route path="/gmail/context/:workflowId" element={<GmailContextPage />} />
+      <Route
+        path="/gmail/draft/review/:workflowId"
+        element={<GmailDraftReviewPage />}
+      />
     </Routes>
   );
 }
